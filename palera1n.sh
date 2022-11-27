@@ -13,7 +13,12 @@ echo "[*] Command ran:`if [ $EUID = 0 ]; then echo " sudo"; fi` ./palera1n.sh $@
 ipsw="" # IF YOU WERE TOLD TO PUT A CUSTOM IPSW URL, PUT IT HERE. YOU CAN FIND THEM ON https://appledb.dev
 version="1.3.0"
 os=$(uname)
-dir="$(pwd)/binaries/$os"
+arch=$(uname -m)
+if [ "$os" = "Linux" ]; then
+    dir="$(pwd)/binaries/Linux/$arch"
+else
+    dir="$(pwd)/binaries/Darwin"
+fi
 commit=$(git rev-parse --short HEAD)
 branch=$(git rev-parse --abbrev-ref HEAD)
 max_args=1
@@ -344,10 +349,13 @@ if [ -e "$dir"/gaster ]; then
 fi
 
 if [ ! -e "$dir"/gaster ]; then
-    curl -sLO https://nightly.link/palera1n/gaster/workflows/makefile/main/gaster-"$os".zip
-    unzip gaster-"$os".zip
+    if [ "$os" = 'Linux' ]; then
+        extrapath="-${arch}"
+    fi
+    curl -sLO https://nightly.link/palera1n/gaster/workflows/makefile/main/gaster-"$os$extrapath".zip
+    unzip gaster-"$os$extrapath".zip
     mv gaster "$dir"/
-    rm -rf gaster gaster-"$os".zip
+    rm -rf gaster gaster-"$os$extrapath".zip
 fi
 
 # Check for pyimg4
@@ -787,9 +795,12 @@ if [ ! -f boot-"$deviceid"/ibot.img4 ]; then
         rm *.bak
     fi
     cd ..
-    "$dir"/img4 -i work/iBSS.patched -o boot-"$deviceid"/iBSS.img4 -M work/IM4M -A -T ibss
-    "$dir"/img4 -i work/ibot.patched -o boot-"$deviceid"/ibot.img4 -M work/IM4M -A -T `if [[ "$cpid" == *"0x801"* ]]; then echo "ibss"; else echo "ibec"; fi`
-    "$dir"/img4 -i other/bootlogo.im4p -o boot-"$deviceid"/bootlogo.img4 -M work/IM4M -A -T rlgo
+    python3 -m pyimg4 im4p create -i work/iBSS.patched -o work/iBSS.patched.im4p -f ibss
+    python3 -m pyimg4 img4 create -p work/iBSS.patched.im4p -m work/IM4M -o boot-"$deviceid"/iBSS.img4
+    python3 -m pyimg4 im4p create -i work/ibot.patched -o work/ibot.patched.im4p -f `if [[ "$cpid" == *"0x801"* ]]; then echo "ibss"; else echo "ibec"; fi`
+    python3 -m pyimg4 img4 create -p work/ibot.patched.im4p -m work/IM4M -o boot-"$deviceid"/ibot.img4
+    python3 -m pyimg4 im4p create -i other/bootlogo.im4p -o work/bootlogo.im4p -f rlgo
+    python3 -m pyimg4 img4 create -p work/bootlogo.im4p -m work/IM4M -o boot-"$deviceid"/bootlogo.img4
 
     touch boot-"$deviceid"/.fsboot
 fi
@@ -802,14 +813,10 @@ sleep 2
 _pwn
 _reset
 echo "[*] Booting device"
-if [[ "$cpid" == *"0x801"* ]]; then
-    sleep 1
-    "$dir"/irecovery -f boot-"$deviceid"/ibot.img4
-    sleep 1
-    "$dir"/irecovery -c fsboot
-else
+if [[ "$cpid" != *"0x801"* ]]; then
     sleep 1
     "$dir"/irecovery -f boot-"$deviceid"/iBSS.img4
+fi
     sleep 1
     "$dir"/irecovery -f boot-"$deviceid"/ibot.img4
     sleep 1
@@ -818,7 +825,6 @@ else
     "$dir"/irecovery -c "setpicture 0x1"
     sleep 1
     "$dir"/irecovery -c fsboot
-fi
 
 if [ "$os" = 'Darwin' ]; then
     defaults write -g ignore-devices -bool false
